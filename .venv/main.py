@@ -6,6 +6,7 @@ import sys
 import threading
 from tkinter import filedialog, Tk
 
+
 def get_country_flag(country_name):
     country_flags = {
         'Russia': '\U0001F1F7\U0001F1FA',
@@ -14,6 +15,7 @@ def get_country_flag(country_name):
         # Add more countries as needed
     }
     return country_flags.get(country_name, '\U0001F3F3')
+
 
 def check_proxy(proxy, lang, results):
     try:
@@ -32,6 +34,7 @@ def check_proxy(proxy, lang, results):
     except requests.RequestException:
         results.append([proxy, 'N/A', 'Unknown', 'Not Working'])
 
+
 def load_proxies_from_file():
     Tk().withdraw()  # Закрыть окно Tkinter
     file_path = filedialog.askopenfilename(title="Select file with proxies")
@@ -39,6 +42,7 @@ def load_proxies_from_file():
         with open(file_path, 'r') as file:
             return [line.strip() for line in file]
     return []
+
 
 def main():
     os.system('cls' if os.name == 'nt' else 'clear')
@@ -49,21 +53,40 @@ def main():
   / /_       / /    / /     / /    /  |/ /   \__ \    / /         
  / __/     _/ /    / /___ _/ /    / /|  /   ___/ /  _/ /          
 /_/       /___/   /_____//___/   /_/ |_/   /____/  /___/    
-                    Proxy Checker v0.3    
+                    Proxy Checker v0.1     
     """
     print(ascii_art + '\n' * 5)
 
-
     print("1: 🇬🇧 English")
     print("2: 🇷🇺 Русский")
-    lang_choice = input()
+    import msvcrt
+
+    while True:
+        if msvcrt.kbhit():
+            lang_choice = msvcrt.getch().decode('utf-8')
+            if lang_choice in ['1', '2']:
+                break
+            else:
+                print("Invalid choice! Please select 1 or 2.")
+
+    lang = 'en' if lang_choice == '1' else 'ru'
+    os.system('cls' if os.name == 'nt' else 'clear')
+    print(ascii_art)
+
     lang = 'en' if lang_choice == '1' else 'ru'
 
     if lang == 'en':
         print("1: Load proxy as a string")
         print("2: Load proxies from file")
         print("3: Enter proxy with login and password")
-        choice = input()
+        while True:
+            if msvcrt.kbhit():
+                choice = msvcrt.getch().decode('utf-8')
+                if choice in ['1', '2', '3']:
+                    break
+                else:
+                    print(
+                        "Invalid choice! Please select 1, 2, or 3." if lang == 'en' else "Неверный выбор! Выберите 1, 2 или 3.")
     else:
         print("1: Ввести прокси строкой")
         print("2: Загрузить прокси из файла")
@@ -106,6 +129,7 @@ def main():
     print("-" * 100)
     for row in results:
         print("{:<30} {:<20} {:<30} {:<15}".format(*row))
+
 
 if __name__ == '__main__':
     main()
