@@ -110,7 +110,7 @@ def main():
   / /_       / /    / /     / /    /  |/ /   \__ \    / /         
  / __/     _/ /    / /___ _/ /    / /|  /   ___/ /  _/ /          
 /_/       /___/   /_____//___/   /_/ |_/   /____/  /___/    
-                    Proxy Checker v1.8     
+                    Proxy Checker v1.0     
     """
     print(ascii_art + '\n' * 5)
 
@@ -161,12 +161,24 @@ def main():
         print("{:<30} {:<20} {:<15}".format("Proxy", "Ping (ms)", "Status"))
         print("-" * 70)
 
+        working_proxies = []
         for result in results:
             print("{:<30} {:<20} {:<15}".format(*result))
+            if result[2].lower() == 'working':
+                working_proxies.append(result[0])
 
-        continue_choice = input("\nDo you want to check more proxies? (y/n): ")
-        if continue_choice.lower() not in ['y']:
-            break
+        # Сохранение рабочих прокси в файл
+        if working_proxies:
+            if os.path.exists("working_proxies.txt"):
+                os.remove("working_proxies.txt")
+        with open("working_proxies.txt", "w") as file:
+            stripped_proxies = [proxy.replace('http://', '').replace('https://', '') for proxy in working_proxies]
+            file.write("\n".join(stripped_proxies))
+            print("\nWorking proxies have been saved to working_proxies.txt")
+            print("\Select one of the options below to complete your work ")
+            continue_choice = input("\nDo you want to check more proxies? (y/n): ")
+            if continue_choice.lower() not in ['y']:
+                break
 
 
 if __name__ == '__main__':
