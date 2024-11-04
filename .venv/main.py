@@ -53,6 +53,7 @@ def main():
     """
     print(ascii_art + '\n' * 5)
 
+
     print("1: 🇬🇧 English")
     print("2: 🇷🇺 Русский")
     lang_choice = input()
