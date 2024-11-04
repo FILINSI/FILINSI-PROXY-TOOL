@@ -2,6 +2,8 @@ import requests
 import concurrent.futures
 import time
 import os
+import threading
+import keyboard
 from tkinter import filedialog, Tk
 from urllib.parse import urlparse
 
@@ -15,23 +17,31 @@ def get_country_flag(country_name):
     return country_flags.get(country_name, '\U0001F3F3')
 
 
-def check_proxy(proxy, lang, results):
-    try:
-        start_time = time.time()
-        response = requests.get('http://httpbin.org/ip', proxies={'http': proxy, 'https': proxy}, timeout=5)
-        delay = (time.time() - start_time) * 1000  # delay in milliseconds
-        if response.status_code == 200:
-            parsed_url = urlparse(proxy)
-            ip_address = parsed_url.hostname
-            ip_info = requests.get(f'http://ip-api.com/json/{ip_address}').json()
-            country = ip_info.get('country', 'Unknown' if lang == 'en' else 'Неизвестно')
-            flag = get_country_flag(country)
-            status = 'Working'
-        else:
-            country, flag, status = 'Unknown', get_country_flag('Unknown'), 'Not Working'
-        results.append([proxy, f'{delay:.2f} ms', f'{flag} {country}', status])
-    except requests.RequestException:
-        results.append([proxy, 'N/A', 'Unknown', 'Not Working'])
+def check_proxy(proxy, lang, results, index, stop_event):
+    unstable = False
+    while not stop_event.is_set():
+        try:
+            start_time = time.time()
+            response = requests.get('http://httpbin.org/ip', proxies={'http': proxy, 'https': proxy}, timeout=5)
+            delay = (time.time() - start_time) * 1000  # задержка в миллисекундах
+
+            if response.status_code == 200:
+                parsed_url = urlparse(proxy)
+                ip_address = parsed_url.hostname
+                ip_info = requests.get(f'http://ip-api.com/json/{ip_address}').json()
+                country = ip_info.get('country', 'Unknown' if lang == 'en' else 'Неизвестно')
+                flag = get_country_flag(country)
+                status = 'Working' if not unstable else 'Unstable'
+            else:
+                country, flag, status = 'Unknown', get_country_flag('Unknown'), 'Not Working'
+                unstable = True
+
+            results[index] = [proxy, f'{delay:.2f} ms', f'{flag} {country}', status]
+        except requests.RequestException:
+            results[index] = [proxy, 'N/A', 'Unknown', 'Unstable']
+            unstable = True
+
+        time.sleep(5)  # Проверять прокси каждые 5 секунд
 
 
 def load_proxies_from_file():
@@ -41,6 +51,25 @@ def load_proxies_from_file():
         with open(file_path, 'r') as file:
             return [line.strip() for line in file]
     return []
+
+
+def update_progress(results, proxies, stop_event):
+    while not stop_event.is_set():
+        os.system('cls' if os.name == 'nt' else 'clear')
+        print("{:<30} {:<20} {:<30} {:<15}".format("Proxy", "Ping (ms)", "Country", "Status"))
+        print("-" * 100)
+
+        for idx, proxy in enumerate(proxies):
+            if results[idx] is None:
+                print("{:<30} {:<20} {:<30} {:<15}".format(proxy, "Checking...", "N/A", "N/A"))
+            else:
+                print("{:<30} {:<20} {:<30} {:<15}".format(*results[idx]))
+
+        time.sleep(0.3)
+
+        if keyboard.is_pressed('enter'):
+            stop_event.set()
+            break
 
 
 def main():
@@ -98,14 +127,21 @@ def main():
         os.system('cls' if os.name == 'nt' else 'clear')
         print(ascii_art)
 
-        results = []
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            executor.map(lambda p: check_proxy(p, lang, results), proxies)
+        # Создать пустые результаты
+        results = [None] * len(proxies)
+        stop_event = threading.Event()
 
-        print("{:<30} {:<20} {:<30} {:<15}".format("Proxy", "Ping (ms)", "Country", "Status"))
-        print("-" * 100)
-        for row in results:
-            print("{:<30} {:<20} {:<30} {:<15}".format(*row))
+        # Запустить поток для обновления прогресса
+        progress_thread = threading.Thread(target=update_progress, args=(results, proxies, stop_event))
+        progress_thread.start()
+
+        # Запустить проверку прокси в многопоточном режиме
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            for index, proxy in enumerate(proxies):
+                executor.submit(check_proxy, proxy, lang, results, index, stop_event)
+
+        # Дождаться завершения потока обновления прогресса
+        progress_thread.join()
 
         # Запросить у пользователя, хочет ли он продолжить работу или завершить программу
         continue_choice = input("\nDo you want to check more proxies? (y/n): " if lang == 'en' else "\nХотите проверить ещё прокси? (д/н): ")
