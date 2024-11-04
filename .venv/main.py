@@ -137,12 +137,15 @@ def main():
     print("Select the destination URL for proxy testing:")
     print("1: http://google.com")
     print("2: http://httpbin.org/get")
+    print("3: Enter your own URL")
 
-    destination_choice = input("Enter your choice (1 or 2): ")
+    destination_choice = input("Enter your choice (1, 2, 3): ")
     if destination_choice == '1':
         destination_url = "http://google.com"
     elif destination_choice == '2':
         destination_url = "http://httpbin.org/get"
+    elif destination_choice == '3':
+        destination_url = input("Enter your own URL (e.g., http://example.com): ")
     else:
         print("Invalid choice! Defaulting to http://httpbin.org/get.")
         destination_url = "http://httpbin.org/get"
