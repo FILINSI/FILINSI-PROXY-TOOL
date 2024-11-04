@@ -11,6 +11,7 @@ import logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s',
                     handlers=[logging.FileHandler("proxy_checker.log"), logging.StreamHandler()])
 
+
 # Функция проверки прокси
 def check_proxy(proxy, results, index, destination_url):
     try:
@@ -22,36 +23,21 @@ def check_proxy(proxy, results, index, destination_url):
             proxy = "http://" + proxy
             logging.debug(f'Proxy modified to include protocol: {proxy}')
 
-        # Извлечение IP и порта из прокси
-        proxy_address = proxy.split("//")[-1]
-        if "@" in proxy_address:
-            proxy_address = proxy_address.split("@")[-1]  # Извлекаем часть с IP:порт
-        ip_port = proxy_address.split(":")
-        if len(ip_port) < 2:
-            raise ValueError(
-                f"Missing port in proxy address: {proxy}. Please provide both IP and port in the format ip:port.")
-
-        ip, port = ip_port[0], int(ip_port[-1])
-        logging.debug(f'Extracted IP: {ip}, Port: {port}')
-
-        # Пинг IP-адреса через socket
-        start_time = time.time()
-        sock = socket.create_connection((ip, port), timeout=5)
-        sock.close()
-        ping_time = (time.time() - start_time) * 1000  # Конвертация в миллисекунды
-        logging.debug(f'Ping time for {proxy}: {ping_time:.2f} ms')
-
-        # Проверяем подключение через прокси с помощью HTTP запроса
+        # Полный HTTP-запрос для измерения времени
         proxies = {
             "http": proxy,
             "https": proxy,
         }
-        response = requests.get(destination_url, proxies=proxies, timeout=5)
+        start_time = time.time()
+        response = requests.get(destination_url, proxies=proxies, timeout=10)
+        end_time = time.time()
+
         if response.status_code == 200:
+            ping_time = (end_time - start_time) * 1000  # Время в миллисекундах
             results[index] = [proxy, f'{ping_time:.2f} ms', 'Working']
-            logging.info(f'Proxy {proxy} is working with ping {ping_time:.2f} ms')
+            logging.info(f'Proxy {proxy} is working with full HTTP ping {ping_time:.2f} ms')
         else:
-            results[index] = [proxy, f'{ping_time:.2f} ms', 'Unreachable']
+            results[index] = [proxy, 'N/A', 'Unreachable']
             logging.warning(f'Proxy {proxy} is unreachable with status code {response.status_code}')
     except requests.exceptions.ProxyError as e:
         results[index] = [proxy, 'N/A', 'Proxy Error']
