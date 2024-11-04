@@ -151,6 +151,13 @@ def main():
         destination_url = "http://httpbin.org/get"
 
     while True:
+        # Выбор между проверкой прокси и мониторингом
+        print("\nSelect mode:")
+        print("1: One-time proxy check")
+        print("2: Monitor proxies")
+
+        mode_choice = input("Enter your choice (1 or 2): ")
+
         print("\n1: Load proxies from file")
         print("2: Enter proxy manually")
 
@@ -170,7 +177,25 @@ def main():
             continue
 
         results = [None] * len(proxies)
-        run_proxy_tests(proxies, results, destination_url)
+
+        if mode_choice == '1':
+            # Одноразовая проверка прокси
+            run_proxy_tests(proxies, results, destination_url)
+        elif mode_choice == '2':
+            # Режим мониторинга прокси
+            interval = input("Enter the monitoring interval in seconds: ")
+            try:
+                interval = int(interval)
+                while True:
+                    run_proxy_tests(proxies, results, destination_url)
+                    print(f"\nMonitoring will continue in {interval} seconds...")
+                    time.sleep(interval)
+            except ValueError:
+                print("Invalid interval. Please enter a numeric value.")
+                continue
+        else:
+            print("Invalid choice for mode!")
+            continue
 
         # Отображение результатов
         os.system('cls' if os.name == 'nt' else 'clear')
@@ -191,30 +216,13 @@ def main():
                 file.write("\n".join(stripped_proxies))
             print("\nWorking proxies have been saved to working_proxies.txt")
 
-        # Вопрос о повторной проверке
-        while True:
-            retest_choice = input("\nDo you want to retest proxies? (all/failed/none): ").lower()
-            if retest_choice == "all":
-                run_proxy_tests(proxies, results, destination_url)
+        if mode_choice == '1':
+            # Вопрос о повторной проверке для одноразового режима
+            retest_choice = input("\nDo you want to check more proxies? (y/n): ")
+            if retest_choice.lower() not in ['y']:
                 break
-            elif retest_choice == "failed":
-                failed_proxies = [proxies[i] for i, result in enumerate(results) if result[2] != 'Working']
-                if failed_proxies:
-                    failed_results = [None] * len(failed_proxies)
-                    run_proxy_tests(failed_proxies, failed_results, destination_url)
-                    for i, failed_result in enumerate(failed_results):
-                        original_index = proxies.index(failed_proxies[i])
-                        results[original_index] = failed_result
-                else:
-                    print("No failed proxies to retest.")
-                break
-            elif retest_choice == "none":
-                break
-            else:
-                print("Invalid choice! Please enter 'all', 'failed', or 'none'.")
-
-        continue_choice = input("\nDo you want to check more proxies? (y/n): ")
-        if continue_choice.lower() not in ['y']:
+        else:
+            # Если в режиме мониторинга, программа просто продолжает работать
             break
 
 
