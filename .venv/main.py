@@ -1,43 +1,81 @@
-import requests
-import concurrent.futures
-import time
 import os
 import threading
+import time
 from tkinter import filedialog, Tk
+import concurrent.futures
+import requests
+import socket
+import logging
+
+# Настройка логирования
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s',
+                    handlers=[logging.FileHandler("proxy_checker.log"), logging.StreamHandler()])
 
 
-# Обновление функций и добавление обработки исключений
-def check_proxy(proxy, lang, results, index):
-    num_tests = 3
-    delays = []
-    unstable = False
+# Функция проверки прокси
+def check_proxy(proxy, results, index):
+    try:
+        proxy = proxy.strip()  # Убираем лишние пробелы и символы новой строки
+        logging.debug(f'Starting check for proxy: {proxy}')
 
-    for _ in range(num_tests):
-        try:
-            start_time = time.time()
-            response = requests.get("https://httpbin.org/ip", proxies={'http': proxy, 'https': proxy}, timeout=5)
-            delay = (time.time() - start_time) * 1000  # задержка в миллисекундах
+        # Добавляем http:// по умолчанию, если не указан протокол
+        if not proxy.startswith("http://") and not proxy.startswith("https://"):
+            proxy = "http://" + proxy
+            logging.debug(f'Proxy modified to include protocol: {proxy}')
 
-            if response.status_code != 200:
-                raise requests.RequestException("Proxy did not respond correctly.")
+        # Извлечение IP и порта из прокси
+        proxy_address = proxy.split("//")[-1]
+        if "@" in proxy_address:
+            proxy_address = proxy_address.split("@")[-1]  # Извлекаем часть с IP:порт
+        ip_port = proxy_address.split(":")
+        if len(ip_port) < 2:
+            raise ValueError(
+                f"Missing port in proxy address: {proxy}. Please provide both IP and port in the format ip:port.")
 
-            delays.append(delay)
+        ip, port = ip_port[0], int(ip_port[-1])
+        logging.debug(f'Extracted IP: {ip}, Port: {port}')
 
-            ip_info = requests.get(f'https://ipapi.co/{proxy.split(":")[0]}/json/').json()
-            country = ip_info.get('country_name', 'Unknown' if lang == 'en' else 'Неизвестно')
-        except (requests.RequestException, ValueError):
-            delays.append(float('inf'))
-            unstable = True
+        # Пинг IP-адреса через socket
+        start_time = time.time()
+        sock = socket.create_connection((ip, port), timeout=5)
+        sock.close()
+        ping_time = (time.time() - start_time) * 1000  # Конвертация в миллисекунды
+        logging.debug(f'Ping time for {proxy}: {ping_time:.2f} ms')
 
-    # Calculate the average delay
-    valid_delays = [d for d in delays if d != float('inf')]
-    average_delay = sum(valid_delays) / len(valid_delays) if valid_delays else float('inf')
-    status = 'Working' if not unstable else 'Unstable'
-    country = country if valid_delays else 'Unknown'
+        # Проверяем подключение через прокси с помощью HTTP запроса
+        proxies = {
+            "http": proxy,
+            "https": proxy,
+        }
+        response = requests.get("http://ipinfo.io", proxies=proxies, timeout=5)
+        if response.status_code == 200:
+            results[index] = [proxy, f'{ping_time:.2f} ms', 'Working']
+            logging.info(f'Proxy {proxy} is working with ping {ping_time:.2f} ms')
+        else:
+            results[index] = [proxy, f'{ping_time:.2f} ms', 'Unreachable']
+            logging.warning(f'Proxy {proxy} is unreachable with status code {response.status_code}')
+    except requests.exceptions.ProxyError as e:
+        results[index] = [proxy, 'N/A', 'Proxy Error']
+        logging.error(f'Proxy {proxy} error: Proxy Error - {str(e)}')
+    except requests.exceptions.ConnectTimeout:
+        results[index] = [proxy, 'N/A', 'Timeout']
+        logging.error(f'Proxy {proxy} error: Connect Timeout')
+    except socket.timeout:
+        results[index] = [proxy, 'N/A', 'Timeout']
+        logging.error(f'Proxy {proxy} error: Socket Timeout')
+    except ValueError as ve:
+        results[index] = [proxy, 'N/A', 'Invalid Format']
+        logging.error(f'Proxy {proxy} error: {ve}')
+    except Exception as e:
+        results[index] = [proxy, 'N/A', f'Error: {str(e)}']
+        logging.error(f'Proxy {proxy} error: {str(e)}')
+    finally:
+        # Убедимся, что результат всегда обновляется, чтобы прогресс отобразился
+        if results[index] is None:
+            results[index] = [proxy, 'N/A', 'Unknown Error']
 
-    results[index] = [proxy, f'{average_delay:.2f} ms' if average_delay != float('inf') else 'N/A', country, status]
 
-
+# Загрузка прокси из файла
 def load_proxies_from_file():
     Tk().withdraw()  # Закрыть окно Tkinter
     file_path = filedialog.askopenfilename(title="Select file with proxies")
@@ -47,21 +85,23 @@ def load_proxies_from_file():
     return []
 
 
+# Функция обновления прогресса проверки прокси
 def update_progress(results, proxies, stop_event):
     while not stop_event.is_set():
         os.system('cls' if os.name == 'nt' else 'clear')
-        print("{:<30} {:<20} {:<30} {:<15}".format("Proxy", "Ping (ms)", "Country", "Status"))
-        print("-" * 100)
+        print("{:<30} {:<20} {:<15}".format("Proxy", "Ping (ms)", "Status"))
+        print("-" * 70)
 
         for idx, proxy in enumerate(proxies):
             if results[idx] is None:
-                print("{:<30} {:<20} {:<30} {:<15}".format(proxy, "Checking...", "N/A", "N/A"))
+                print("{:<30} {:<20} {:<15}".format(proxy, "Calculating...", "Checking..."))
             else:
-                print("{:<30} {:<20} {:<30} {:<15}".format(*results[idx]))
+                print("{:<30} {:<20} {:<15}".format(*results[idx]))
 
-        time.sleep(0.3)
+        time.sleep(1)  # Увеличиваем время задержки для обновления экрана, чтобы избежать слишком частых обновлений
 
 
+# Основная функция
 def main():
     os.system('cls' if os.name == 'nt' else 'clear')
     ascii_art = r"""
@@ -70,48 +110,27 @@ def main():
   / /_       / /    / /     / /    /  |/ /   \__ \    / /         
  / __/     _/ /    / /___ _/ /    / /|  /   ___/ /  _/ /          
 /_/       /___/   /_____//___/   /_/ |_/   /____/  /___/    
-                    Proxy Checker v0.15     
+                    Proxy Checker v1.8     
     """
     print(ascii_art + '\n' * 5)
 
-    lang_choice = input("Choose language \n 1: 🇬🇧 English \n 2: 🇷🇺 Русский \n ")
-    lang = 'en' if lang_choice == '1' else 'ru'
-
     while True:
-        os.system('cls' if os.name == 'nt' else 'clear')
-        print(ascii_art)
+        print("1: Load proxies from file")
+        print("2: Enter proxy manually")
 
-        if lang == 'en':
-            print("1: Load proxy as a string")
-            print("2: Load proxies from file")
-            print("3: Enter proxy with login and password")
-        else:
-            print("1: Ввести прокси строкой")
-            print("2: Загрузить прокси из файла")
-            print("3: Ввести прокси с логином и паролем")
-
-        choice = input("Select an option (1, 2, 3): ")
+        choice = input("Select an option (1, 2): ")
         proxies = []
 
         if choice == '1':
-            proxy = input(
-                "Enter proxy (format: http://ip:port): " if lang == 'en' else "Введите прокси (формат: http://ip:port): ")
-            proxies.append(proxy)
-        elif choice == '2':
             proxies = load_proxies_from_file()
             if not proxies:
-                print(
-                    "No proxies loaded. Returning to menu..." if lang == 'en' else "Прокси не загружены. Возвращение в меню...")
+                print("No proxies loaded. Returning to menu...")
                 continue
-        elif choice == '3':
-            username = input("Enter username: " if lang == 'en' else "Введите имя пользователя: ")
-            password = input("Enter password: " if lang == 'en' else "Введите пароль: ")
-            ip = input("Enter IP: " if lang == 'en' else "Введите IP: ")
-            port = input("Enter port: " if lang == 'en' else "Введите порт: ")
-            proxy = f'http://{username}:{password}@{ip}:{port}'
+        elif choice == '2':
+            proxy = input("Enter proxy (format: http://ip:port or ip:port): ")
             proxies.append(proxy)
         else:
-            print("Invalid choice!" if lang == 'en' else "Неверный выбор!")
+            print("Invalid choice!")
             continue
 
         os.system('cls' if os.name == 'nt' else 'clear')
@@ -124,21 +143,29 @@ def main():
         progress_thread.start()
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-            future_to_index = {executor.submit(check_proxy, proxy, lang, results, idx): idx for idx, proxy in
+            future_to_index = {executor.submit(check_proxy, proxy, results, idx): idx for idx, proxy in
                                enumerate(proxies)}
 
             for future in concurrent.futures.as_completed(future_to_index):
                 try:
                     future.result()
                 except Exception as exc:
-                    print(f'Proxy check generated an exception: {exc}')
+                    logging.error(f'Proxy check generated an exception: {exc}')
 
         stop_event.set()
         progress_thread.join()
 
-        continue_choice = input(
-            "\nDo you want to check more proxies? (y/n): " if lang == 'en' else "\nХотите проверить ещё прокси? (д/н): ")
-        if continue_choice.lower() not in ['y', 'д']:
+        # Отображаем финальный результат после завершения всех проверок
+        os.system('cls' if os.name == 'nt' else 'clear')
+        print(ascii_art + '\n' * 5)
+        print("{:<30} {:<20} {:<15}".format("Proxy", "Ping (ms)", "Status"))
+        print("-" * 70)
+
+        for result in results:
+            print("{:<30} {:<20} {:<15}".format(*result))
+
+        continue_choice = input("\nDo you want to check more proxies? (y/n): ")
+        if continue_choice.lower() not in ['y']:
             break
 
 
