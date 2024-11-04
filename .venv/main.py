@@ -3,45 +3,39 @@ import concurrent.futures
 import time
 import os
 import threading
-import keyboard
 from tkinter import filedialog, Tk
-from urllib.parse import urlparse
 
 
-def get_country_flag(country_name):
-    country_flags = {
-        'Russia': '\U0001F1F7\U0001F1FA',
-        'United States': '\U0001F1FA\U0001F1F8',
-        'Unknown': '\U0001F3F3',
-    }
-    return country_flags.get(country_name, '\U0001F3F3')
-
-
-def check_proxy(proxy, lang, results, index, stop_event):
+# Обновление функций и добавление обработки исключений
+def check_proxy(proxy, lang, results, index):
+    num_tests = 3
+    delays = []
     unstable = False
-    while not stop_event.is_set():
+
+    for _ in range(num_tests):
         try:
             start_time = time.time()
-            response = requests.get('http://httpbin.org/ip', proxies={'http': proxy, 'https': proxy}, timeout=5)
+            response = requests.get("https://httpbin.org/ip", proxies={'http': proxy, 'https': proxy}, timeout=5)
             delay = (time.time() - start_time) * 1000  # задержка в миллисекундах
 
-            if response.status_code == 200:
-                parsed_url = urlparse(proxy)
-                ip_address = parsed_url.hostname
-                ip_info = requests.get(f'http://ip-api.com/json/{ip_address}').json()
-                country = ip_info.get('country', 'Unknown' if lang == 'en' else 'Неизвестно')
-                flag = get_country_flag(country)
-                status = 'Working' if not unstable else 'Unstable'
-            else:
-                country, flag, status = 'Unknown', get_country_flag('Unknown'), 'Not Working'
-                unstable = True
+            if response.status_code != 200:
+                raise requests.RequestException("Proxy did not respond correctly.")
 
-            results[index] = [proxy, f'{delay:.2f} ms', f'{flag} {country}', status]
-        except requests.RequestException:
-            results[index] = [proxy, 'N/A', 'Unknown', 'Unstable']
+            delays.append(delay)
+
+            ip_info = requests.get(f'https://ipapi.co/{proxy.split(":")[0]}/json/').json()
+            country = ip_info.get('country_name', 'Unknown' if lang == 'en' else 'Неизвестно')
+        except (requests.RequestException, ValueError):
+            delays.append(float('inf'))
             unstable = True
 
-        time.sleep(5)  # Проверять прокси каждые 5 секунд
+    # Calculate the average delay
+    valid_delays = [d for d in delays if d != float('inf')]
+    average_delay = sum(valid_delays) / len(valid_delays) if valid_delays else float('inf')
+    status = 'Working' if not unstable else 'Unstable'
+    country = country if valid_delays else 'Unknown'
+
+    results[index] = [proxy, f'{average_delay:.2f} ms' if average_delay != float('inf') else 'N/A', country, status]
 
 
 def load_proxies_from_file():
@@ -49,7 +43,7 @@ def load_proxies_from_file():
     file_path = filedialog.askopenfilename(title="Select file with proxies")
     if file_path:
         with open(file_path, 'r') as file:
-            return [line.strip() for line in file]
+            return [line.strip() for line in file if line.strip()]
     return []
 
 
@@ -67,10 +61,6 @@ def update_progress(results, proxies, stop_event):
 
         time.sleep(0.3)
 
-        if keyboard.is_pressed('enter'):
-            stop_event.set()
-            break
-
 
 def main():
     os.system('cls' if os.name == 'nt' else 'clear')
@@ -80,11 +70,10 @@ def main():
   / /_       / /    / /     / /    /  |/ /   \__ \    / /         
  / __/     _/ /    / /___ _/ /    / /|  /   ___/ /  _/ /          
 /_/       /___/   /_____//___/   /_/ |_/   /____/  /___/    
-                    Proxy Checker v0.9     
+                    Proxy Checker v0.15     
     """
     print(ascii_art + '\n' * 5)
 
-    # Выбор языка только один раз
     lang_choice = input("Choose language \n 1: 🇬🇧 English \n 2: 🇷🇺 Русский \n ")
     lang = 'en' if lang_choice == '1' else 'ru'
 
@@ -92,7 +81,6 @@ def main():
         os.system('cls' if os.name == 'nt' else 'clear')
         print(ascii_art)
 
-        # Переход на страницу выбора действия с прокси
         if lang == 'en':
             print("1: Load proxy as a string")
             print("2: Load proxies from file")
@@ -106,12 +94,14 @@ def main():
         proxies = []
 
         if choice == '1':
-            proxy = input("Enter proxy (format: http://ip:port): " if lang == 'en' else "Введите прокси (формат: http://ip:port): ")
+            proxy = input(
+                "Enter proxy (format: http://ip:port): " if lang == 'en' else "Введите прокси (формат: http://ip:port): ")
             proxies.append(proxy)
         elif choice == '2':
             proxies = load_proxies_from_file()
             if not proxies:
-                print("No proxies loaded. Returning to menu..." if lang == 'en' else "Прокси не загружены. Возвращение в меню...")
+                print(
+                    "No proxies loaded. Returning to menu..." if lang == 'en' else "Прокси не загружены. Возвращение в меню...")
                 continue
         elif choice == '3':
             username = input("Enter username: " if lang == 'en' else "Введите имя пользователя: ")
@@ -127,24 +117,27 @@ def main():
         os.system('cls' if os.name == 'nt' else 'clear')
         print(ascii_art)
 
-        # Создать пустые результаты
         results = [None] * len(proxies)
         stop_event = threading.Event()
 
-        # Запустить поток для обновления прогресса
         progress_thread = threading.Thread(target=update_progress, args=(results, proxies, stop_event))
         progress_thread.start()
 
-        # Запустить проверку прокси в многопоточном режиме
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            for index, proxy in enumerate(proxies):
-                executor.submit(check_proxy, proxy, lang, results, index, stop_event)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            future_to_index = {executor.submit(check_proxy, proxy, lang, results, idx): idx for idx, proxy in
+                               enumerate(proxies)}
 
-        # Дождаться завершения потока обновления прогресса
+            for future in concurrent.futures.as_completed(future_to_index):
+                try:
+                    future.result()
+                except Exception as exc:
+                    print(f'Proxy check generated an exception: {exc}')
+
+        stop_event.set()
         progress_thread.join()
 
-        # Запросить у пользователя, хочет ли он продолжить работу или завершить программу
-        continue_choice = input("\nDo you want to check more proxies? (y/n): " if lang == 'en' else "\nХотите проверить ещё прокси? (д/н): ")
+        continue_choice = input(
+            "\nDo you want to check more proxies? (y/n): " if lang == 'en' else "\nХотите проверить ещё прокси? (д/н): ")
         if continue_choice.lower() not in ['y', 'д']:
             break
 
