@@ -175,7 +175,7 @@ def main():
             stripped_proxies = [proxy.replace('http://', '').replace('https://', '') for proxy in working_proxies]
             file.write("\n".join(stripped_proxies))
             print("\nWorking proxies have been saved to working_proxies.txt")
-            print("\Select one of the options below to complete your work ")
+            print("Select one of the options below to complete your work ")
             continue_choice = input("\nDo you want to check more proxies? (y/n): ")
             if continue_choice.lower() not in ['y']:
                 break
