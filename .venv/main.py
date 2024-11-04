@@ -11,9 +11,8 @@ import logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s',
                     handlers=[logging.FileHandler("proxy_checker.log"), logging.StreamHandler()])
 
-
 # Функция проверки прокси
-def check_proxy(proxy, results, index):
+def check_proxy(proxy, results, index, destination_url):
     try:
         proxy = proxy.strip()  # Убираем лишние пробелы и символы новой строки
         logging.debug(f'Starting check for proxy: {proxy}')
@@ -47,7 +46,7 @@ def check_proxy(proxy, results, index):
             "http": proxy,
             "https": proxy,
         }
-        response = requests.get("http://ipinfo.io", proxies=proxies, timeout=5)
+        response = requests.get(destination_url, proxies=proxies, timeout=5)
         if response.status_code == 200:
             results[index] = [proxy, f'{ping_time:.2f} ms', 'Working']
             logging.info(f'Proxy {proxy} is working with ping {ping_time:.2f} ms')
@@ -70,7 +69,6 @@ def check_proxy(proxy, results, index):
         results[index] = [proxy, 'N/A', f'Error: {str(e)}']
         logging.error(f'Proxy {proxy} error: {str(e)}')
     finally:
-        # Убедимся, что результат всегда обновляется, чтобы прогресс отобразился
         if results[index] is None:
             results[index] = [proxy, 'N/A', 'Unknown Error']
 
@@ -98,7 +96,7 @@ def update_progress(results, proxies, stop_event):
             else:
                 print("{:<30} {:<20} {:<15}".format(*results[idx]))
 
-        time.sleep(1)  # Увеличиваем время задержки для обновления экрана, чтобы избежать слишком частых обновлений
+        time.sleep(1)
 
 
 # Основная функция
@@ -133,6 +131,8 @@ def main():
             print("Invalid choice!")
             continue
 
+        destination_url = input("Enter the destination URL (default is http://google.com): ") or "http://google.com"
+
         os.system('cls' if os.name == 'nt' else 'clear')
         print(ascii_art)
 
@@ -143,7 +143,7 @@ def main():
         progress_thread.start()
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-            future_to_index = {executor.submit(check_proxy, proxy, results, idx): idx for idx, proxy in
+            future_to_index = {executor.submit(check_proxy, proxy, results, idx, destination_url): idx for idx, proxy in
                                enumerate(proxies)}
 
             for future in concurrent.futures.as_completed(future_to_index):
@@ -155,7 +155,6 @@ def main():
         stop_event.set()
         progress_thread.join()
 
-        # Отображаем финальный результат после завершения всех проверок
         os.system('cls' if os.name == 'nt' else 'clear')
         print(ascii_art + '\n' * 5)
         print("{:<30} {:<20} {:<15}".format("Proxy", "Ping (ms)", "Status"))
@@ -167,7 +166,6 @@ def main():
             if result[2].lower() == 'working':
                 working_proxies.append(result[0])
 
-        # Сохранение рабочих прокси в файл
         if working_proxies:
             if os.path.exists("working_proxies.txt"):
                 os.remove("working_proxies.txt")
@@ -183,4 +181,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
