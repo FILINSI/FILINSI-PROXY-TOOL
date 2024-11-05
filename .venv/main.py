@@ -113,7 +113,6 @@ def check_proxy(proxy, results, index, destination_url):
         if results[index] is None:
             results[index] = [proxy, 'N/A', 'Unknown Error', 'N/A']
 
-
 # Загрузка прокси из файла
 def load_proxies_from_file():
     Tk().withdraw()
