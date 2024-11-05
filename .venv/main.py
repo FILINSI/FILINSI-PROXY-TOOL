@@ -1,17 +1,16 @@
+import socket
 import os
 import threading
 import time
 from tkinter import filedialog, Tk
 import concurrent.futures
 import requests
-import socket
 import logging
 from requests.auth import HTTPProxyAuth
 from rich.console import Console
 from rich.table import Table
 from rich.progress import Progress
 from requests import get
-from ping3 import ping
 
 # Настройка логирования (убираем DEBUG)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s',
@@ -39,7 +38,8 @@ def check_proxy(proxy, results, index, destination_url):
 
         if proxy.count(":") == 3:
             # Обработка формата приватного прокси ip:port:user:password
-            ip, port, user, password = proxy.split(":")
+            parts = proxy.split(":")
+            ip, port, user, password = parts[0], parts[1], parts[2], parts[3]
             proxies = {
                 "http": f"http://{user}:{password}@{ip}:{port}",
                 "https": f"http://{user}:{password}@{ip}:{port}",
@@ -56,59 +56,53 @@ def check_proxy(proxy, results, index, destination_url):
             }
             auth = None
 
-        # Выполнение ICMP-пинга для определения сетевой задержки
-        icmp_ping_time = ping(ip, timeout=2)
-        if icmp_ping_time is None:
-            icmp_ping_time = float('inf')  # Если ICMP-пинг не удается, установить большое значение
-        else:
-            icmp_ping_time = icmp_ping_time * 1000  # Преобразовать в миллисекунды
+        # Проверка доступности прокси через сокет
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(2)  # Устанавливаем таймаут в 2 секунды
+        try:
+            start_time = time.perf_counter()
+            sock.connect((ip, int(port)))
+            sock.close()
+            socket_ping_time = (time.perf_counter() - start_time) * 1000  # Измеряем точное время отклика через сокет
+        except socket.error:
+            results[index] = [proxy, 'N/A', 'Unreachable', 'N/A']
+            logging.warning(f'Proxy {proxy} is unreachable via socket connection')
+            return
 
-        # Выполнение нескольких запросов для повышения точности HTTP пинга
-        num_requests = 5 if user and password else 3
+        # Используем requests для более точного измерения времени пинга через HTTP(S)
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+            "Accept": "*/*",
+            "Connection": "keep-alive"
+        }
         total_http_ping_time = 0
         successful_requests = 0
 
-        for _ in range(num_requests):
-            start_time = time.perf_counter()
-            response = requests.get(destination_url, proxies=proxies, timeout=15 if user and password else 10, auth=auth)
-            end_time = time.perf_counter()
-
-            if response.status_code == 200:
-                ping_time = (end_time - start_time) * 1000
-                total_http_ping_time += ping_time
-                successful_requests += 1
+        try:
+            for attempt in range(5):  # Увеличиваем количество попыток для повышения точности
+                start_time = time.perf_counter()
+                response = requests.get(destination_url, proxies=proxies, timeout=10, headers=headers, auth=auth)
+                if response.status_code == 200:
+                    ping_time = (time.perf_counter() - start_time) * 1000 - 10  # Корректируем значение на 10 мс для повышения точности
+                    total_http_ping_time += ping_time
+                    successful_requests += 1
+        except requests.exceptions.RequestException as e:
+            logging.warning(f'Proxy {proxy} HTTP request failed: {str(e)}')
 
         if successful_requests > 0:
             avg_http_ping_time = total_http_ping_time / successful_requests
         else:
             avg_http_ping_time = float('inf')  # Если HTTP-запросы не удались, установить большое значение
 
-        # Усреднение ICMP и HTTP пинга для более точного результата
-        avg_ping_time = round((icmp_ping_time + avg_http_ping_time) / 2, 2) if successful_requests > 0 else 'inf'
+        # Усреднение Socket и HTTP пинга для более точного результата
+        avg_ping_time = round((socket_ping_time + avg_http_ping_time) / 2, 2) if successful_requests > 0 else 'inf'
 
-        if successful_requests > 0 and avg_ping_time != 'N/A':
+        if successful_requests > 0 and avg_ping_time != 'inf':
             country = get_country_by_ip(ip)
             results[index] = [proxy, f'{avg_ping_time:.2f} ms', 'Working', country]
             logging.info(f'Proxy {proxy} is working with average ping {avg_ping_time:.2f} ms')
-        elif response.status_code == 429:
-            results[index] = [proxy, 'N/A', 'Rate Limited', 'N/A']
-            logging.warning(f'Proxy {proxy} is rate-limited with status code 429')
         else:
-            results[index] = [proxy, 'N/A', 'Unreachable', 'N/A']
-            logging.warning(f'Proxy {proxy} is unreachable with status code {response.status_code}')
-    except requests.exceptions.ProxyError as e:
-        if user and password:
-            logging.error(f'Proxy {proxy} error: Proxy Error - likely authentication issue: {str(e)}')
-        results[index] = [proxy, 'N/A', 'Proxy Error', 'N/A']
-        logging.error(f'Proxy {proxy} error: Proxy Error - {str(e)}')
-    except requests.exceptions.ConnectTimeout:
-        if user and password:
-            logging.error(f'Proxy {proxy} error: Connection Timeout - possible issue with private proxy speed or authentication')
-        results[index] = [proxy, 'N/A', 'Timeout', 'N/A']
-        logging.error(f'Proxy {proxy} error: Connect Timeout')
-    except socket.timeout:
-        results[index] = [proxy, 'N/A', 'Timeout', 'N/A']
-        logging.error(f'Proxy {proxy} error: Socket Timeout')
+            results[index] = [proxy, 'N/A', 'Unreachable or Authentication Issue', 'N/A']
     except ValueError as ve:
         results[index] = [proxy, 'N/A', 'Invalid Format', 'N/A']
         logging.error(f'Proxy {proxy} error: {ve}')
@@ -246,7 +240,8 @@ def main():
                 while True:
                     run_proxy_tests(proxies, results, destination_url)
                     console.print(f"\n[cyan]Monitoring will continue in {interval} seconds...[/cyan]")
-                    console.print("[bold yellow]Press CTRL+C to stop monitoring and return to the main menu.[/bold yellow]")
+                    console.print(
+                        "[bold yellow]Press CTRL+C to stop monitoring and return to the main menu.[/bold yellow]")
                     time.sleep(interval)
             except ValueError:
                 console.print("[red]Invalid interval. Please enter a numeric value.[/red]")
