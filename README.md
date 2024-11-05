@@ -14,12 +14,15 @@ This tool can be used to check the availability of a large number of proxies, ev
 - **Proxy Monitoring**: Option for continuous monitoring of proxy server availability with user-defined intervals.
 - **Logging Results**: Logs all checks for subsequent analysis.
 
-## 🔧 How to Use
-1. **Run the script**: Start the script and follow the on-screen prompts.
-2. **Load proxies**: You can load proxies from a file or enter them manually.
-3. **Choose mode**: Available modes include one-time check or monitoring.
-4. **Display results**: Proxy check results are displayed in a table with ping, status, and country information.
-5. **Save working proxies**: Working proxies are automatically saved to the `working_proxies.txt` file.
+1. **Starting the script**: Go to .venv and open a terminal in the directory
+2. Run the script
+```bash
+python main.py
+```
+4. **Load proxies**: You can load proxies from a file or enter them manually.
+5. **Select Operation Mode**: Single check or monitoring mode is available.
+6. **Results display**: Proxy check results are displayed in a table with ping, status and country information.
+7. **Saving Working Proxies**: Working proxies are automatically saved to the `working_proxies.txt` file.
 
 ## 🛠️ Dependencies
 - Python 3.7+
@@ -52,11 +55,15 @@ Proxy Checker — это многофункциональный инструме
 - **Логирование результатов**: Логи всех проверок сохраняются для последующего анализа.
 
 ## 🔧 Как использовать
-1. **Запуск скрипта**: Запустите скрипт и следуйте подсказкам на экране.
-2. **Загрузка прокси**: Вы можете загрузить прокси из файла или ввести их вручную.
-3. **Выбор режима работы**: Доступен режим одноразовой проверки или мониторинга.
-4. **Отображение результатов**: Результаты проверки прокси отображаются в виде таблицы с информацией о пинге, статусе и стране.
-5. **Сохранение рабочих прокси**: Рабочие прокси автоматически сохраняются в файл `working_proxies.txt`.
+1. **Запуск скрипта**: Идем в .venv и открываем терминал в директории
+2. Запускаем скрипт
+```bash
+python main.py
+```
+4. **Загрузка прокси**: Вы можете загрузить прокси из файла или ввести их вручную.
+5. **Выбор режима работы**: Доступен режим одноразовой проверки или мониторинга.
+6. **Отображение результатов**: Результаты проверки прокси отображаются в виде таблицы с информацией о пинге, статусе и стране.
+7. **Сохранение рабочих прокси**: Рабочие прокси автоматически сохраняются в файл `working_proxies.txt`.
 
 ## 🛠️ Зависимости
 - Python 3.7+
