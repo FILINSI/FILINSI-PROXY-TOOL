@@ -2,7 +2,7 @@
 
 This repository contains a Python script for checking the availability and stability of proxies. The script allows you to validate multiple proxy servers in real-time, providing information on their response time, country, and status.
 
-![image](https://github.com/user-attachments/assets/a77f9bae-bbf1-4428-915b-9d5e100d0814)
+![image](https://github.com/user-attachments/assets/a73764ab-76d5-4b44-bf01-ae8a9a6ebd1d)
 
 
 ## Features
