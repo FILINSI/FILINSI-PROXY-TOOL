@@ -11,6 +11,7 @@ from rich.console import Console
 from rich.table import Table
 from rich.progress import Progress
 from requests import get
+from ping3 import ping
 
 # Настройка логирования (убираем DEBUG)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s',
@@ -55,16 +56,40 @@ def check_proxy(proxy, results, index, destination_url):
             }
             auth = None
 
-        # Выполнение запроса к выбранному URL назначения
-        start_time = time.time()
-        response = requests.get(destination_url, proxies=proxies, timeout=10, auth=auth)
-        end_time = time.time()
+        # Выполнение ICMP-пинга для определения сетевой задержки
+        icmp_ping_time = ping(ip, timeout=2)
+        if icmp_ping_time is None:
+            icmp_ping_time = float('inf')  # Если ICMP-пинг не удается, установить большое значение
+        else:
+            icmp_ping_time = icmp_ping_time * 1000  # Преобразовать в миллисекунды
 
-        if response.status_code == 200:
-            ping_time = (end_time - start_time) * 1000
+        # Выполнение нескольких запросов для повышения точности HTTP пинга
+        num_requests = 5 if user and password else 3
+        total_http_ping_time = 0
+        successful_requests = 0
+
+        for _ in range(num_requests):
+            start_time = time.perf_counter()
+            response = requests.get(destination_url, proxies=proxies, timeout=15 if user and password else 10, auth=auth)
+            end_time = time.perf_counter()
+
+            if response.status_code == 200:
+                ping_time = (end_time - start_time) * 1000
+                total_http_ping_time += ping_time
+                successful_requests += 1
+
+        if successful_requests > 0:
+            avg_http_ping_time = total_http_ping_time / successful_requests
+        else:
+            avg_http_ping_time = float('inf')  # Если HTTP-запросы не удались, установить большое значение
+
+        # Усреднение ICMP и HTTP пинга для более точного результата
+        avg_ping_time = round((icmp_ping_time + avg_http_ping_time) / 2, 2) if successful_requests > 0 else 'inf'
+
+        if successful_requests > 0 and avg_ping_time != 'N/A':
             country = get_country_by_ip(ip)
-            results[index] = [proxy, f'{ping_time:.2f} ms', 'Working', country]
-            logging.info(f'Proxy {proxy} is working with full HTTP ping {ping_time:.2f} ms')
+            results[index] = [proxy, f'{avg_ping_time:.2f} ms', 'Working', country]
+            logging.info(f'Proxy {proxy} is working with average ping {avg_ping_time:.2f} ms')
         elif response.status_code == 429:
             results[index] = [proxy, 'N/A', 'Rate Limited', 'N/A']
             logging.warning(f'Proxy {proxy} is rate-limited with status code 429')
@@ -72,9 +97,13 @@ def check_proxy(proxy, results, index, destination_url):
             results[index] = [proxy, 'N/A', 'Unreachable', 'N/A']
             logging.warning(f'Proxy {proxy} is unreachable with status code {response.status_code}')
     except requests.exceptions.ProxyError as e:
+        if user and password:
+            logging.error(f'Proxy {proxy} error: Proxy Error - likely authentication issue: {str(e)}')
         results[index] = [proxy, 'N/A', 'Proxy Error', 'N/A']
         logging.error(f'Proxy {proxy} error: Proxy Error - {str(e)}')
     except requests.exceptions.ConnectTimeout:
+        if user and password:
+            logging.error(f'Proxy {proxy} error: Connection Timeout - possible issue with private proxy speed or authentication')
         results[index] = [proxy, 'N/A', 'Timeout', 'N/A']
         logging.error(f'Proxy {proxy} error: Connect Timeout')
     except socket.timeout:
@@ -107,7 +136,7 @@ def update_progress(results, proxies, stop_event):
         os.system('cls' if os.name == 'nt' else 'clear')
         table = Table(title="Proxy Checker Results", show_lines=True)
         table.add_column("Proxy", justify="left", style="cyan", no_wrap=True)
-        table.add_column("Ping (ms)", justify="right", style="green")
+        table.add_column("Ping (ms)", justify="right", style="green", highlight=True)
         table.add_column("Status", justify="left", style="magenta")
         table.add_column("Country", justify="left", style="yellow")
 
@@ -115,7 +144,11 @@ def update_progress(results, proxies, stop_event):
             if results[idx] is None:
                 table.add_row(proxy, "Calculating...", "Checking...", "N/A")
             else:
-                table.add_row(*results[idx])
+                ping_value = results[idx][1]
+                if ping_value == 'inf ms':
+                    table.add_row(results[idx][0], '[yellow]inf[/yellow] ms', results[idx][2], results[idx][3])
+                else:
+                    table.add_row(*results[idx])
 
         console.print(table)
         time.sleep(1)
@@ -127,7 +160,7 @@ def run_proxy_tests(proxies, results, destination_url):
     progress_thread = threading.Thread(target=update_progress, args=(results, proxies, stop_event))
     progress_thread.start()
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
         future_to_index = {executor.submit(check_proxy, proxy, results, idx, destination_url): idx for idx, proxy in
                            enumerate(proxies)}
 
