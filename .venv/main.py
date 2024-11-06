@@ -187,15 +187,18 @@ def main():
     console.print("Select the destination URL for proxy testing:")
     console.print("1: [bold]http://google.com[/bold]")
     console.print("2: [bold]http://httpbin.org/get[/bold]")
-    console.print("3: [bold]Enter your own URL[/bold]")
+    console.print("3: [bold]http://azenv.net[/bold]")
+    console.print("4: [bold]Enter your own URL[/bold]")
 
     destination_choice = input("Enter your choice (1, 2, 3): ")
     if destination_choice == '1':
         destination_url = "http://google.com"
     elif destination_choice == '2':
         destination_url = "http://httpbin.org/get"
-    elif destination_choice == '3':
+    elif destination_choice == '4':
         destination_url = input("Enter your own URL (e.g., http://example.com): ")
+    elif destination_choice == '3':
+        destination_url = "http://azenv.net"
     else:
         console.print("[red]Invalid choice! Defaulting to http://httpbin.org/get.[/red]")
         destination_url = "http://httpbin.org/get"
