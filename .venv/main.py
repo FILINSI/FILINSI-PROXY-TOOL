@@ -179,7 +179,7 @@ def main():
   / /_       / /    / /     / /    /  |/ /   \__ \    / /         
  / __/     _/ /    / /___ _/ /    / /|  /   ___/ /  _/ /          
 /_/       /___/   /_____//___/   /_/ |_/   /____/  /___/    
-                    Proxy Checker v1.7     
+                    Proxy Checker v1.7.1     
     """
     console.print(ascii_art, style="bold blue")
 
